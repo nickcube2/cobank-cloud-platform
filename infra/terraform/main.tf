@@ -46,6 +46,8 @@ module "eks" {
       max_size     = 5
       desired_size = 3
       instance_types = ["t3.medium"]
+
+      enable_cluster_creator_admin_permissions = true
     }
   }
 
