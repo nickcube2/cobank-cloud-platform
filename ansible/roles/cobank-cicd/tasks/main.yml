@@ -4,17 +4,19 @@
     that: image_tag != ""
     fail_msg: "Not in a Git repository – cannot determine image tag"
 
-- name: Get AWS Account ID
+- name: Get AWS Account ID (always run)
   command: aws sts get-caller-identity --query Account --output text
   register: aws_account
   changed_when: false
+  run_once: true
+  ignore_errors: false
 
-- name: Set ECR facts
+- name: Set ECR facts safely
   set_fact:
-    account_id: "{{ aws_account.stdout }}"
-    ecr_registry: "{{ aws_account.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
-    frontend_image: "{{ ecr_registry }}/{{ frontend_repo }}:{{ image_tag }}"
-    backend_image: "{{ ecr_registry }}/{{ backend_repo }}:{{ image_tag }}"
+    account_id: "{{ aws_account.stdout | default('000000000000') }}"
+    ecr_registry: "{{ aws_account.stdout | default('000000000000') }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
+    frontend_image: "{{ aws_account.stdout | default('000000000000') }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ frontend_repo }}:{{ image_tag }}"
+    backend_image: "{{ aws_account.stdout | default('000000000000') }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ backend_repo }}:{{ image_tag }}"
 
 - name: ECR Login
   command: >
