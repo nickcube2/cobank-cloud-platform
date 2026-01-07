@@ -16,11 +16,13 @@
     frontend_image: "{{ aws_account.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ frontend_repo }}:{{ image_tag }}"
     backend_image: "{{ aws_account.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ backend_repo }}:{{ image_tag }}"
 
-- name: ECR Login
-  command: >
-    aws ecr get-login-password --region {{ aws_region }} |
-    docker login --username AWS --password-stdin {{ ecr_registry }}
-  no_log: true
+- name: ECR Login (compatible format)
+  shell: |
+    PASSWORD=$(aws ecr get-login-password --region {{ aws_region }})
+    echo "$PASSWORD" | docker login --username AWS --password-stdin {{ ecr_registry }}
+  no_log: false
+  environment:
+    AWS_DEFAULT_REGION: {{ aws_region }}
 
 - name: Process Frontend Image
   block:
