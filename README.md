@@ -11,33 +11,6 @@ An end‑to‑end, cloud‑native sample platform showing **Local Dev → Kubern
 
 This repo is designed to align with the **CoBank Cloud Platform Deployment Flow** diagram (see `Cobank-architectural diagram.png`).
 
----
-
-## Repo Structure
-
-```text
-.
-├── apps/
-│   ├── backend/                 # Node.js API (health, readiness, liveness)
-│   └── frontend/                # Nginx static app + /api reverse proxy
-├── docker-compose.yml           # Local dev (no Kubernetes)
-├── k8s/
-│   ├── base/                    # Base K8s resources (namespace, deployments, services, HPA)
-│   ├── istio/                   # Istio Gateway + VirtualService
-│   └── overlays/
-│       ├── local/               # kind/minikube using locally-built images
-│       ├── dev/                 # AWS ECR images tagged :dev
-│       └── prod/                # AWS ECR images tagged :prod
-├── gitops/
-│   └── argo/                    # ArgoCD Applications (platform + istio)
-├── terraform/                   # AWS infra (EKS + ECR)
-├── ansible/                     # Build/scan/push + deploy automation
-│   ├── main.yml                 # Primary automation playbook
-│   ├── playbook.yml             # Convenience entrypoint (imports main.yml)
-│   ├── group_vars/all.yml       # Defaults (region, cluster name, repo names)
-│   └── ci/trivy-scan.sh         # Optional image scanning helper
-└── Jenkinsfile                  # Optional CI pipeline example
-```
 
 ---
 
@@ -57,6 +30,31 @@ Optional:
 - Trivy
 - `istioctl`
 - `argocd` CLI
+
+---
+
+## Smoke Test (Recommended)
+
+The quickest way to verify the repo works **both locally and on Kubernetes** is to run the smoke test:
+
+```bash
+chmod +x scripts/smoke-test.sh
+./scripts/smoke-test.sh
+```
+
+What it does:
+
+- Runs **Docker Compose** (build + start), then checks:
+  - Backend: `http://localhost:3000/api/health`
+  - Frontend: `http://localhost:8080/`
+- Recreates a **kind** cluster named `cobank`, then:
+  - Builds `cobank-backend:dev` and `cobank-frontend:dev`
+  - Loads images into kind (prevents `ImagePullBackOff`)
+  - Applies `k8s/overlays/local`
+  - Waits for `backend` and `frontend` rollouts
+
+If it finishes with “All tests passed”, you’re good to go.
+
 
 ---
 
