@@ -1,19 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: cobank
-
 resources:
   - ../../base
 
+# Local kind/minikube deployment uses images built on your machine.
+# Load them into kind with: kind load docker-image ...
 images:
-  # rewrite either ECR or short names to local dev
-  - name: 000000000000.dkr.ecr.us-east-1.amazonaws.com/cobank-backend
-    newName: cobank-backend
-    newTag: dev
-  - name: 000000000000.dkr.ecr.us-east-1.amazonaws.com/cobank-frontend
-    newName: cobank-frontend
-    newTag: dev
   - name: cobank-backend
     newName: cobank-backend
     newTag: dev
@@ -21,34 +14,17 @@ images:
     newName: cobank-frontend
     newTag: dev
 
+# Ensure Kubernetes does not try to pull from a remote registry when using kind.
 patches:
-  # Ensure kind doesn’t try to pull from registry
   - target:
       group: apps
       version: v1
       kind: Deployment
       name: backend
     path: patch-backend-pullpolicy.yaml
-
   - target:
       group: apps
       version: v1
       kind: Deployment
       name: frontend
     path: patch-frontend-pullpolicy.yaml
-
-  # Nginx writable dirs for non-root + read-only root fs
-  - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: frontend
-    path: patch-frontend-nginx-writable.yaml
-
-  # Probes should hit the actual listen port (set to 8080)
-  - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: frontend
-    path: patch-frontend-probes-8080.yaml

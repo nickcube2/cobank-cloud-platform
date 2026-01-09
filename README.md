@@ -1,400 +1,281 @@
 # CoBank Cloud Platform
 
-**End-to-End Cloud-Native Deployment with Terraform, Ansible, EKS & GitOps**
+An end‑to‑end, cloud‑native sample platform showing **Local Dev → Kubernetes → AWS EKS** with:
+
+- **Docker Compose** for fast local iteration
+- **Kubernetes (kind/minikube)** for local cluster testing
+- **Terraform** for AWS infra (VPC + EKS + ECR)
+- **Ansible** to build/scan/push images and deploy
+- **ArgoCD** for GitOps continuous delivery
+- **Istio** for ingress routing
+
+This repo is designed to align with the **CoBank Cloud Platform Deployment Flow** diagram (see `Cobank-architectural diagram.png`).
 
 ---
 
-## 📌 Overview
+## Repo Structure
 
-**CoBank Cloud Platform** is a production-style cloud-native application deployed on **AWS EKS**, using **Terraform** for infrastructure provisioning, **Ansible** for build and deployment automation, and **ArgoCD** for GitOps-based continuous delivery.
-
-This repository demonstrates:
-
-* Infrastructure as Code (IaC)
-* Secure container builds & scanning
-* Kubernetes deployments
-* GitOps workflow
-* CI/CD on AWS
-
-> **Note:** This project uses a demo tech stack (AWS, Terraform, Ansible, EKS, ArgoCD). The principles demonstrated—CI/CD, GitOps, IaC, and containerized deployments—can be applied to other environments.
-
----
-
-## 🧱 Architecture (High Level)
-
-```
-Developer
-   |
-   v
-GitHub Repo
-   |
-   v
-CI/CD Pipeline (Jenkins / GitHub Actions)
-   |
-   +--> Terraform → AWS VPC + EKS
-   |
-   +--> Ansible → Build, Scan, Push Images
-   |
-   v
-Amazon ECR
-   |
-   v
-EKS Cluster
-   |
-   +--> ArgoCD (GitOps)
-   |
-   v
-Frontend + Backend (Istio Ingress)
-```
-
----
-
-## 📂 Repository Structure
-
-```
+```text
 .
-├── ansible/                # Build, scan, push, deploy
-├── terraform/              # AWS VPC + EKS (Terraform)
-├── apps/                   # Frontend & Backend code
-├── k8s/                    # Kubernetes manifests
-├── gitops/argo/            # ArgoCD applications
-├── istio-1.28.2/           # Istio configuration
-├── Jenkinsfile             # Optional Jenkins CI pipeline
-├── docker-compose.yml      # Local dev
-└── README.md               # This file
+├── apps/
+│   ├── backend/                 # Node.js API (health, readiness, liveness)
+│   └── frontend/                # Nginx static app + /api reverse proxy
+├── docker-compose.yml           # Local dev (no Kubernetes)
+├── k8s/
+│   ├── base/                    # Base K8s resources (namespace, deployments, services, HPA)
+│   ├── istio/                   # Istio Gateway + VirtualService
+│   └── overlays/
+│       ├── local/               # kind/minikube using locally-built images
+│       ├── dev/                 # AWS ECR images tagged :dev
+│       └── prod/                # AWS ECR images tagged :prod
+├── gitops/
+│   └── argo/                    # ArgoCD Applications (platform + istio)
+├── terraform/                   # AWS infra (EKS + ECR)
+├── ansible/                     # Build/scan/push + deploy automation
+│   ├── main.yml                 # Primary automation playbook
+│   ├── playbook.yml             # Convenience entrypoint (imports main.yml)
+│   ├── group_vars/all.yml       # Defaults (region, cluster name, repo names)
+│   └── ci/trivy-scan.sh         # Optional image scanning helper
+└── Jenkinsfile                  # Optional CI pipeline example
 ```
 
 ---
 
-## 🖥️ Step 0: Local Deployment & Testing (Optional)
+## Prerequisites
 
-Run and test the application locally **without AWS**.
+### Local (Docker / kind)
+- Docker Desktop
+- `kubectl`
+- `kind` (recommended) or `minikube`
 
-### Prerequisites for Local Deployment
+### AWS
+- AWS CLI (`aws configure`)
+- Terraform >= 1.5
+- Ansible
 
-* Docker & Docker Compose
-* Python 3.10+
-* Minikube or kind (optional, for Kubernetes testing)
-* kubectl
+Optional:
+- Trivy
+- `istioctl`
+- `argocd` CLI
 
-### Build and Run with Docker Compose
+---
+
+# 1) Local Development (Docker Compose)
+
+Fastest way to run everything locally.
 
 ```bash
-docker-compose build
-docker-compose up
+docker compose up --build
 ```
 
-*Frontend:* http://localhost:8080
-*Backend API:* http://localhost:3000/api/health
+- Frontend: http://localhost:8080
+- Backend health: http://localhost:3000/api/health
 
+Stop:
+```bash
+docker compose down
+```
 
-> Docker Compose simulates the deployed environment locally.
+---
 
-### Run Kubernetes Locally (Optional)
+# 2) Local Kubernetes (kind / minikube)
 
-1. Start a local cluster:
+This path is **the closest to production** without AWS.
 
+## 2.1 Create a local cluster
+
+### kind (recommended)
+```bash
+kind create cluster --name cobank
+kubectl cluster-info
+```
+
+### minikube
 ```bash
 minikube start
-```
-
-2. Configure kubectl:
-
-```bash
 kubectl config use-context minikube
 ```
 
-3. Apply manifests (via Kustomize overlays):
+## 2.2 Build images locally
 
 ```bash
-kubectl apply -k k8s/overlays/dev
+docker build -t cobank-backend:dev apps/backend
+docker build -t cobank-frontend:dev apps/frontend
 ```
 
-4. Check pods & services:
+## 2.3 (kind only) Load images into the cluster
+
+> This is the #1 cause of **ImagePullBackOff** on kind.
 
 ```bash
-kubectl get pods
-kubectl get svc
+kind load docker-image cobank-backend:dev --name cobank
+kind load docker-image cobank-frontend:dev --name cobank
 ```
 
-5. Access frontend via NodePort:
-
+Verify the node can see them:
 ```bash
-minikube service frontend
+docker exec -it cobank-control-plane crictl images | grep cobank || true
 ```
 
-### Test Application
-
-* Verify frontend and backend endpoints.
-* Optional: run backend tests:
+## 2.4 Deploy using the local overlay
 
 ```bash
-cd apps/backend
-pytest
+kubectl apply -k k8s/overlays/local
+kubectl -n cobank get pods
 ```
 
-> Local deployment is ideal for **fast iteration and testing** before cloud deployment.
+Expected:
+- `backend-*` Running
+- `frontend-*` Running
 
----
+## 2.5 Access the services (port-forward)
 
-## ✅ Prerequisites (Cloud Deployment)
-
-Install locally:
-
-* AWS CLI
-* Terraform **>= 1.5**
-* Ansible
-* Docker
-* kubectl
-* Python 3.10+
-* Trivy (optional)
-* istioctl (optional)
-* argocd CLI (optional)
-
-Configure AWS credentials:
-
+Terminal 1:
 ```bash
-aws configure
+kubectl -n cobank port-forward svc/backend 3000:3000
+```
+
+Terminal 2:
+```bash
+kubectl -n cobank port-forward svc/frontend 8080:80
+```
+
+Test:
+```bash
+curl -i http://localhost:3000/api/health
+curl -I http://localhost:8080/
 ```
 
 ---
 
-## 🏗️ STEP 1: Provision Infrastructure (Terraform)
+## Local Kubernetes Troubleshooting (the issues we hit)
 
-### 1. Go to Terraform directory
+### A) `ImagePullBackOff` on kind
+Cause: the image exists in Docker Desktop but **not inside kind’s node runtime**.
 
+Fix:
 ```bash
-cd infra/terraform
+kind load docker-image cobank-backend:dev --name cobank
+kind load docker-image cobank-frontend:dev --name cobank
+kubectl -n cobank delete pod -l app=backend
+kubectl -n cobank delete pod -l app=frontend
 ```
 
-### 2. Initialize Terraform
+### B) Frontend `CrashLoopBackOff` / nginx permission errors
+The base manifests run nginx as non-root and keep the root FS read-only; nginx needs writable cache/run dirs.
 
+Fix: already baked into `k8s/base/frontend-deployment.yaml` via:
+- emptyDir mounts: `/var/cache/nginx`, `/var/run`
+- `fsGroup: 101`
+
+### C) Port-forward “connection refused”
+Cause: port-forward tries to connect to the container port; if the pod isn’t ready yet, it can fail.
+
+Fix:
 ```bash
-terraform init -upgrade
+kubectl -n cobank wait --for=condition=ready pod -l app=frontend --timeout=120s
+kubectl -n cobank port-forward svc/frontend 8080:80
 ```
-
-### 3. Plan Infrastructure
-
-```bash
-terraform plan \
-  -var "cluster_name=my-eks-cluster" \
-  -var "region=us-east-1"
-```
-
-### 4. Apply Infrastructure
-
-```bash
-terraform apply \
-  -var "cluster_name=my-eks-cluster" \
-  -var "region=us-east-1"
-```
-
-### What Terraform Creates
-
-* VPC (public + private subnets)
-* Internet/NAT Gateways
-* EKS cluster
-* Managed node groups
-* IAM roles & security groups
 
 ---
 
-## 🔑 STEP 2: Configure kubectl for EKS
+# 3) AWS Cloud Deployment (Terraform → ECR → EKS → Istio → ArgoCD)
+
+This follows the lower half of the diagram:
+- Terraform provisions AWS infra
+- CI/CD (Ansible or Jenkins/GitHub Actions) builds & pushes images to ECR
+- ArgoCD continuously deploys manifests into EKS
+- Istio routes traffic to frontend/backend
+
+## 3.1 Provision AWS infrastructure (Terraform)
 
 ```bash
-aws eks update-kubeconfig \
-  --name my-eks-cluster \
-  --region us-east-1
+cd terraform
+terraform init
+terraform apply
 ```
 
-Verify:
-
+When complete, configure kubectl for the cluster:
 ```bash
+aws eks update-kubeconfig --name cobank-eks --region us-east-1
 kubectl get nodes
 ```
 
----
+> If you changed `cluster_name` or `aws_region`, update them in `ansible/group_vars/all.yml`.
 
-## 🔧 STEP 3: Ansible – Build, Scan, Push & Deploy
+## 3.2 Build, scan, and push images to ECR (Ansible)
 
-### 1. Create Python Virtual Environment
-
-```bash
-python3 -m venv ansible-venv
-source ansible-venv/bin/activate
-pip install ansible requests docker
-```
-
-### 2. Inventory (already included)
-
-`ansible/inventory/localhost.yml`
-
-```yaml
-all:
-  hosts:
-    localhost:
-      ansible_connection: local
-      ansible_python_interpreter: "{{ ansible_playbook_python }}"
-```
-
-### 3. Run Ansible Playbook
+From repo root:
 
 ```bash
-cd ansible
-ansible-playbook main.yml \
-  -i inventory/localhost.yml \
-  -e aws_region=us-east-1 \
-  -e cluster_name=my-eks-cluster \
-  -e app_namespace=cobank
+ansible-playbook ansible/playbook.yml
 ```
 
-### What Ansible Does
+What it does (high level):
+- Determines an immutable image tag from Git
+- Logs into ECR
+- Builds frontend/backend images
+- Runs Trivy scans (HIGH/CRITICAL)
+- Pushes images to ECR
+- Applies Kubernetes manifests (namespace, deployments, services, HPA, Istio)
 
-1. Validates environment
-2. Generates immutable image tags (Git SHA)
-3. Authenticates Docker to Amazon ECR
-4. Builds frontend & backend images
-5. Scans images with Trivy
-6. Pushes images to ECR
-7. Applies Kubernetes manifests
-8. Verifies pods & services
+## 3.3 GitOps continuous delivery (ArgoCD)
 
----
+ArgoCD apps are in:
+- `gitops/argo/application-base.yaml` (deploys platform)
+- `gitops/argo/application-istio.yaml` (deploys istio gateway/virtualservice)
 
-## 🌀 STEP 4: GitOps with ArgoCD
-
-### 1. Install ArgoCD
-
+1) Install ArgoCD (one-time):
 ```bash
 kubectl create namespace argocd
-kubectl apply -n argocd \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 ```
 
-### 2. Deploy ArgoCD Application
-
+2) Apply the applications:
 ```bash
-kubectl apply -f gitops/argo/application-base.yaml
 kubectl apply -f gitops/argo/application-istio.yaml
+kubectl apply -f gitops/argo/application-base.yaml
 ```
 
-ArgoCD will:
+> Update `repoURL` inside the ArgoCD Application manifests to your fork.
 
-* Watch the Git repo
-* Automatically sync Kubernetes manifests
-* Reconcile drift
+## 3.4 Access on AWS
 
----
+If you expose Istio ingress (LoadBalancer), you can reach the app via the ingress external address.
 
-## 🌐 STEP 5: Access the Application
-
-### Check Pods
-
+Check:
 ```bash
-kubectl get pods -n cobank
+kubectl -n istio-system get svc
+kubectl -n cobank get svc
 ```
 
-### Port-forward Istio Ingress
+---
 
+# 4) Environments and Image Tags
+
+- **Local Kubernetes:** `k8s/overlays/local` → `cobank-frontend:dev`, `cobank-backend:dev` (loaded into kind)
+- **AWS Dev:** `k8s/overlays/dev` → ECR images tagged `:dev`
+- **AWS Prod:** `k8s/overlays/prod` → ECR images tagged `:prod`
+
+---
+
+# 5) Cleanup
+
+### Local
 ```bash
-kubectl port-forward \
-  svc/istio-ingressgateway 8080:80 \
-  -n istio-system
+kubectl delete -k k8s/overlays/local || true
+kind delete cluster --name cobank || true
 ```
 
-Access:
-
-* Frontend: [http://localhost:8080](http://localhost:8080)
-
----
-
-## 🔁 STEP 6: CI/CD on AWS
-
-### Option A: Jenkins (Traditional CI)
-
-1. Deploy Jenkins on EC2 or EKS
-2. Install plugins: Docker, Terraform, Ansible, AWS CLI
-3. Add AWS credentials
-4. Create a Multibranch Pipeline
-5. Jenkins uses `Jenkinsfile`
-
-Pipeline stages:
-
-* Checkout
-* Terraform Init/Apply
-* Ansible Build & Deploy
-* ECR Push
-* EKS Deploy
-
----
-
-### Option B: GitHub Actions (Modern CI)
-
-Typical workflow:
-
-* Trigger on push
-* Terraform deploy infra
-* Ansible build & push
-* ArgoCD sync cluster
-
-(Recommended for production)
-
----
-
-## 🔄 Full End-to-End Flow
-
-```text
-Git Push
-   ↓
-CI Pipeline
-   ↓
-Terraform → AWS Infra
-   ↓
-Ansible → Build & Push Images
-   ↓
-ECR
-   ↓
-EKS
-   ↓
-ArgoCD (GitOps)
-   ↓
-Running Application
-```
-
----
-
-## 🧹 Cleanup
-
-Destroy everything:
-
+### AWS
 ```bash
-cd infra/terraform
-terraform destroy \
-  -var "cluster_name=my-eks-cluster" \
-  -var "region=us-east-1"
+cd terraform
+terraform destroy
 ```
 
 ---
 
-## 🛡️ Best Practices Used
+## Notes
 
-* Immutable Docker images
-* Git-based versioning
-* Infrastructure as Code
-* GitOps deployment model
-* Security scanning (Trivy)
-* Separation of infra & app layers
-
----
-
-## 📌 Summary
-
-This repository demonstrates a **real-world AWS production workflow** using:
-
-* Terraform → Infrastructure
-* Ansible → Build & Deploy
-* Kubernetes → Runtime
-* ArgoCD → GitOps
-* Jenkins/GitHub Actions → CI/CD
-
-It is designed to be **scalable, auditable, cloud-native**, with optional **local deployment** for quick testing and review.
+- The diagram shows Jenkins/GitHub Actions; this repo includes a `Jenkinsfile` example and uses Ansible as the automation entrypoint.
+- If you want GitHub Actions added as the CI/CD runner, we can add workflows that call the same build/push steps and then let ArgoCD sync.

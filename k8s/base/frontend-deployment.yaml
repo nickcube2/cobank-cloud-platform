@@ -13,8 +13,16 @@ spec:
       labels:
         app: frontend
     spec:
+      # Run nginx as non-root (uid 101 in the official image) and keep the root
+      # filesystem read-only. nginx still needs writable locations for cache and
+      # runtime files; we mount emptyDir volumes for those.
       securityContext:
-        fsGroup: 10002
+        fsGroup: 101
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
       containers:
         - name: frontend
           image: cobank-frontend
@@ -44,6 +52,12 @@ spec:
             # nginx user in the official image is typically 101
             runAsUser: 101
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
               add: ["NET_BIND_SERVICE"]
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
