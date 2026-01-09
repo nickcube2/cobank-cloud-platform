@@ -14,7 +14,7 @@ spec:
         app: frontend
     spec:
       containers:
-        - name: frontend
-          image: cobank-frontend:PLACEHOLDER_TAG
-          ports:
-            - containerPort: 80
+      - name: frontend
+        image: cobank-frontend:latest
+        ports:
+        - containerPort: 80

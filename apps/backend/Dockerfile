@@ -1,7 +1,4 @@
-FROM node:18-alpine
+FROM python:3.11-slim
 WORKDIR /app
-COPY package.json ./
-RUN npm install --production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]
+COPY app.py .
+CMD ["python", "app.py"]

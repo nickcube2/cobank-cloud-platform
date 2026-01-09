@@ -1,17 +1,26 @@
 # CoBank Cloud Platform
 
-A production-grade, secure, observable, GitOps-driven cloud-native application on AWS EKS.
+Enterprise-grade cloud-native deployment platform demonstrating:
+- Secure CI/CD
+- Zero-trust service mesh (Istio)
+- GitOps (ArgoCD)
+- Policy-driven deployments
+- AWS EKS production patterns
 
-## Features
-- React Frontend + Node.js Backend
-- Deployed on AWS EKS via Terraform
-- Istio Service Mesh with mTLS
-- GitOps with ArgoCD
-- Monitoring: Prometheus + Grafana
-- Security: Network Policies, Trivy scans
-- Backups: Velero
+## Architecture Highlights
+- Immutable Docker images
+- Trivy vulnerability scanning
+- AWS ECR image registry
+- Kubernetes autoscaling
+- Istio ingress + traffic control
+- Git commit–based versioning
 
-## Quick Start
-1. Provision infra: `cd infra/terraform && terraform apply`
-2. Install ArgoCD and apply `gitops/argo/application.yaml`
-3. Access app via Istio Gateway
+## Deployment Flow
+Developer → Git → Jenkins → Ansible → ECR → EKS → Istio → ArgoCD
+
+## Prerequisites
+- AWS CLI
+- Docker
+- Ansible
+- kubectl
+- Trivy
