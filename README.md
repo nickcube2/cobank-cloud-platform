@@ -84,8 +84,8 @@ docker-compose build
 docker-compose up
 ```
 
-*Frontend:* [http://localhost:3000](http://localhost:3000)
-*Backend:* [http://localhost:5000](http://localhost:5000)
+*Frontend:* http://localhost:8080
+
 
 > Docker Compose simulates the deployed environment locally.
 
