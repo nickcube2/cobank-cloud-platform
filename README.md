@@ -1,391 +1,241 @@
-# CoBank Cloud Platform
+# 🏦 CoBank Cloud Platform
 
-An end‑to‑end, cloud‑native sample platform showing **Local Dev → Kubernetes → AWS EKS** with:
+> **End-to-end cloud-native platform demonstrating a full banking workload deployment pipeline — from local dev to production AWS EKS — with GitOps, service mesh, and observability built in.**
 
-- **Docker Compose** for fast local iteration
-- **Kubernetes (kind/minikube)** for local cluster testing
-- **Terraform** for AWS infra (VPC + EKS + ECR)
-- **Ansible** to build/scan/push images and deploy
-- **ArgoCD** for GitOps continuous delivery
-- **Istio** for ingress routing
-
-This repo is designed to align with the **CoBank Cloud Platform Deployment Flow** diagram (see `Cobank-architectural diagram.png`).
-
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-623CE4.svg)](https://www.terraform.io/)
+[![Kubernetes](https://img.shields.io/badge/Orchestration-Kubernetes-326CE5.svg)](https://kubernetes.io/)
+[![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-EF7B4D.svg)](https://argoproj.github.io/cd/)
+[![Istio](https://img.shields.io/badge/ServiceMesh-Istio-466BB0.svg)](https://istio.io/)
+[![Prometheus](https://img.shields.io/badge/Monitoring-Prometheus-E6522C.svg)](https://prometheus.io/)
+[![Ansible](https://img.shields.io/badge/Automation-Ansible-EE0000.svg)](https://www.ansible.com/)
 
 ---
 
-## Prerequisites
+## 💡 What This Demonstrates
 
-### Local (Docker / kind)
+A production-grade cloud platform architecture aligned with banking infrastructure requirements — observability-first, GitOps-driven, and compliant-ready. Built to show the full deployment lifecycle from a developer's laptop to AWS EKS.
+
+> Designed to reflect the operational and regulatory expectations of financial services engineering teams.
+
+---
+
+## 🏗️ Architecture
+
+```
+Local Dev (Docker Compose)
+        │
+        ▼
+Local Kubernetes (kind / minikube)
+        │
+        ▼
+AWS Cloud (Terraform → ECR → EKS)
+        │
+   ┌────┴────────────────────────┐
+   │                             │
+   ▼                             ▼
+ArgoCD (GitOps CD)          Istio (Ingress + Service Mesh)
+   │                             │
+   ▼                             ▼
+EKS Workloads              Frontend / Backend Services
+        │
+        ▼
+Prometheus + Grafana (Observability)
+```
+
+---
+
+## ✨ Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Local Dev** | Docker Compose |
+| **Local K8s** | kind / minikube |
+| **Cloud Infra** | Terraform (VPC + EKS + ECR) |
+| **CI/CD** | Ansible (build → scan → push → deploy) |
+| **GitOps** | ArgoCD |
+| **Service Mesh** | Istio (ingress routing) |
+| **Monitoring** | Prometheus + Grafana |
+| **Security Scanning** | Trivy (HIGH/CRITICAL image scan) |
+| **Container Registry** | AWS ECR |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+**Local:**
 - Docker Desktop
 - `kubectl`
 - `kind` (recommended) or `minikube`
 
-### AWS
+**AWS:**
 - AWS CLI (`aws configure`)
 - Terraform >= 1.5
 - Ansible
 
-Optional:
-- Trivy
-- `istioctl`
-- `argocd` CLI
+**Optional:** Trivy, `istioctl`, `argocd` CLI
 
 ---
 
-## Smoke Test (Recommended)
-
-The quickest way to verify the repo works **both locally and on Kubernetes** is to run the smoke test:
+### Fastest Path — Smoke Test
 
 ```bash
 chmod +x scripts/smoke-test.sh
 ./scripts/smoke-test.sh
 ```
 
-What it does:
-
-- Runs **Docker Compose** (build + start), then checks:
-  - Backend: `http://localhost:3000/api/health`
-  - Frontend: `http://localhost:8080/`
-- Recreates a **kind** cluster named `cobank`, then:
-  - Builds `cobank-backend:dev` and `cobank-frontend:dev`
-  - Loads images into kind (prevents `ImagePullBackOff`)
-  - Applies `k8s/overlays/local`
-  - Waits for `backend` and `frontend` rollouts
-
-If it finishes with “All tests passed”, you’re good to go.
-
+Validates Docker Compose + local Kubernetes in one pass. If it ends with **"All tests passed"** — you're good.
 
 ---
 
-# 1) Local Development (Docker Compose)
-
-Fastest way to run everything locally.
+## 1️⃣ Local Development (Docker Compose)
 
 ```bash
 docker compose up --build
 ```
 
-- Frontend: http://localhost:8080
-- Backend health: http://localhost:3000/api/health
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:8080 |
+| Backend health | http://localhost:3000/api/health |
 
-Stop:
 ```bash
-docker compose down
+docker compose down   # stop
 ```
 
 ---
 
-# 2) Local Kubernetes (kind / minikube)
+## 2️⃣ Local Kubernetes (kind)
 
-This path is **the closest to production** without AWS.
-
-## 2.1 Create a local cluster
-
-### kind (recommended)
 ```bash
+# Create cluster
 kind create cluster --name cobank
-kubectl cluster-info
-```
 
-### minikube
-```bash
-minikube start
-kubectl config use-context minikube
-```
-
-## 2.2 Build images locally
-
-```bash
+# Build images
 docker build -t cobank-backend:dev apps/backend
 docker build -t cobank-frontend:dev apps/frontend
-```
 
-## 2.3 (kind only) Load images into the cluster
-
-> This is the #1 cause of **ImagePullBackOff** on kind.
-
-```bash
+# Load into kind (prevents ImagePullBackOff)
 kind load docker-image cobank-backend:dev --name cobank
 kind load docker-image cobank-frontend:dev --name cobank
-```
 
-Verify the node can see them:
-```bash
-docker exec -it cobank-control-plane crictl images | grep cobank || true
-```
-
-## 2.4 Deploy using the local overlay
-
-```bash
+# Deploy
 kubectl apply -k k8s/overlays/local
 kubectl -n cobank get pods
-```
 
-Expected:
-- `backend-*` Running
-- `frontend-*` Running
-
-## 2.5 Access the services (port-forward)
-
-Terminal 1:
-```bash
+# Access (two terminals)
 kubectl -n cobank port-forward svc/backend 3000:3000
-```
-
-Terminal 2:
-```bash
 kubectl -n cobank port-forward svc/frontend 8080:80
 ```
 
-Test:
+**Expected:** `backend-*` and `frontend-*` both Running.
+
+---
+
+## 3️⃣ AWS Deployment (Terraform → ECR → EKS → ArgoCD)
+
+### Provision Infrastructure
 ```bash
-curl -i http://localhost:3000/api/health
-curl -I http://localhost:8080/
+cd terraform
+terraform init && terraform apply
+aws eks update-kubeconfig --name cobank-eks --region us-east-1
+kubectl get nodes
+```
+
+### Build & Push to ECR (Ansible)
+```bash
+ansible-playbook ansible/playbook.yml
+```
+Ansible handles: image tagging → ECR login → Docker build → Trivy scan → ECR push → K8s manifest apply.
+
+### GitOps Delivery (ArgoCD)
+```bash
+# Install ArgoCD (one-time)
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Deploy applications
+kubectl apply -f gitops/argo/application-istio.yaml
+kubectl apply -f gitops/argo/application-base.yaml
 ```
 
 ---
 
-## Local Kubernetes Troubleshooting (the issues we hit)
+## 📊 Observability
 
-### A) `ImagePullBackOff` on kind
-Cause: the image exists in Docker Desktop but **not inside kind’s node runtime**.
+The monitoring stack follows patterns used in regulated financial environments — observability as a first-class concern, not an afterthought.
 
-Fix:
-```bash
-kind load docker-image cobank-backend:dev --name cobank
-kind load docker-image cobank-frontend:dev --name cobank
-kubectl -n cobank delete pod -l app=backend
-kubectl -n cobank delete pod -l app=frontend
-```
-
-### B) Frontend `CrashLoopBackOff` / nginx permission errors
-The base manifests run nginx as non-root and keep the root FS read-only; nginx needs writable cache/run dirs.
-
-Fix: already baked into `k8s/base/frontend-deployment.yaml` via:
-- emptyDir mounts: `/var/cache/nginx`, `/var/run`
-- `fsGroup: 101`
-
-### C) Port-forward “connection refused”
-Cause: port-forward tries to connect to the container port; if the pod isn’t ready yet, it can fail.
-
-Fix:
-```bash
-kubectl -n cobank wait --for=condition=ready pod -l app=frontend --timeout=120s
-kubectl -n cobank port-forward svc/frontend 8080:80
-```
-
----
-
-
-## Monitoring & Observability
-
-This project includes a lightweight monitoring stack to provide visibility into application and platform health, following patterns commonly used in regulated financial environments and AWS EKS deployments.
-
-Monitoring is intentionally deployed as a separate concern from the application workloads.
-
-### Components
-
-- **Prometheus** for metrics collection
-- **Grafana** for visualization and dashboards
-- **Application-level metrics** exposed by the backend
-- **Kubernetes-native service discovery**
-
----
-
-### Monitoring (Local – Docker)
-
-Prometheus and Grafana can be run locally using Docker Compose to observe the backend service running on the host.
-
-Start monitoring locally:
-
+### Local (Docker)
 ```bash
 docker compose -f monitoring/docker-compose.monitoring.yml up
-````
-
-Access:
-
-* Prometheus: [http://localhost:9090](http://localhost:9090)
-* Grafana: [http://localhost:3001](http://localhost:3001)
-
-  * Username: `admin`
-  * Password: `admin`
-
-In this mode, Prometheus scrapes the backend metrics endpoint at:
-
-```text
-http://host.docker.internal:3000/metrics
 ```
 
----
+| Tool | URL | Credentials |
+|------|-----|-------------|
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3001 | admin / admin |
 
-### Monitoring (Local Kubernetes – kind / minikube)
-
-The same monitoring stack can be deployed into Kubernetes using native manifests.
-
-Deploy monitoring components:
-
+### Kubernetes
 ```bash
 kubectl apply -f monitoring/k8s/namespace.yaml
 kubectl apply -f monitoring/k8s/prometheus/
 kubectl apply -f monitoring/k8s/grafana/
 ```
 
-Port-forward services:
+### Backend Metrics (Prometheus-compatible)
+Endpoint: `/metrics`
+
+- HTTP request rate
+- Request latency (p95)
+- Process CPU usage
+- Node.js heap usage
+- Pod availability indicators
 
 ```bash
-kubectl -n monitoring port-forward svc/prometheus 9090:9090
-kubectl -n monitoring port-forward svc/grafana 3001:3000
-```
-
-Prometheus uses Kubernetes endpoint discovery to scrape backend metrics from the `cobank` namespace without hard-coded targets.
-
----
-
-### Backend Metrics
-
-The backend exposes Prometheus-compatible metrics at:
-
-```text
-/metrics
-```
-
-Metrics include:
-
-* HTTP request rate
-* Request latency (p95)
-* Process CPU usage
-* Node.js heap usage
-* Pod availability indicators
-
-These metrics are visualized using a preloaded Grafana dashboard.
-
----
-
-### Monitoring Smoke Test
-
-A monitoring smoke test is provided to validate observability before or after deployment.
-
-`scripts/smoke-test-monitoring.sh`
-
-```bash
-#!/usr/bin/env bash
-set -e
-
-echo "Checking backend metrics endpoint..."
-curl -sf http://localhost:3000/metrics | grep http_request_duration_seconds
-
-echo "Monitoring smoke test passed"
+# Validate monitoring
+./scripts/smoke-test-monitoring.sh
 ```
 
 ---
 
-### Design Rationale
+## 🌍 Environments
 
-Monitoring is included by default to reflect operational requirements typical of banking and regulated environments, where observability, reliability, and early issue detection are critical.
-
-```
-
-
----
-
-# 3) AWS Cloud Deployment (Terraform → ECR → EKS → Istio → ArgoCD)
-
-This follows the lower half of the diagram:
-- Terraform provisions AWS infra
-- CI/CD (Ansible or Jenkins/GitHub Actions) builds & pushes images to ECR
-- ArgoCD continuously deploys manifests into EKS
-- Istio routes traffic to frontend/backend
-
-## 3.1 Provision AWS infrastructure (Terraform)
-
-```bash
-cd terraform
-terraform init
-terraform apply
-```
-
-When complete, configure kubectl for the cluster:
-```bash
-aws eks update-kubeconfig --name cobank-eks --region us-east-1
-kubectl get nodes
-```
-
-> If you changed `cluster_name` or `aws_region`, update them in `ansible/group_vars/all.yml`.
-
-## 3.2 Build, scan, and push images to ECR (Ansible)
-
-From repo root:
-
-```bash
-ansible-playbook ansible/playbook.yml
-```
-
-What it does (high level):
-- Determines an immutable image tag from Git
-- Logs into ECR
-- Builds frontend/backend images
-- Runs Trivy scans (HIGH/CRITICAL)
-- Pushes images to ECR
-- Applies Kubernetes manifests (namespace, deployments, services, HPA, Istio)
-
-## 3.3 GitOps continuous delivery (ArgoCD)
-
-ArgoCD apps are in:
-- `gitops/argo/application-base.yaml` (deploys platform)
-- `gitops/argo/application-istio.yaml` (deploys istio gateway/virtualservice)
-
-1) Install ArgoCD (one-time):
-```bash
-kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-```
-
-2) Apply the applications:
-```bash
-kubectl apply -f gitops/argo/application-istio.yaml
-kubectl apply -f gitops/argo/application-base.yaml
-```
-
-> Update `repoURL` inside the ArgoCD Application manifests to your fork.
-
-## 3.4 Access on AWS
-
-If you expose Istio ingress (LoadBalancer), you can reach the app via the ingress external address.
-
-Check:
-```bash
-kubectl -n istio-system get svc
-kubectl -n cobank get svc
-```
+| Environment | Overlay | Image Tag |
+|-------------|---------|-----------|
+| Local K8s | `k8s/overlays/local` | `cobank-*:dev` (kind-loaded) |
+| AWS Dev | `k8s/overlays/dev` | ECR `:dev` |
+| AWS Prod | `k8s/overlays/prod` | ECR `:prod` |
 
 ---
 
-# 4) Environments and Image Tags
+## 🧹 Cleanup
 
-- **Local Kubernetes:** `k8s/overlays/local` → `cobank-frontend:dev`, `cobank-backend:dev` (loaded into kind)
-- **AWS Dev:** `k8s/overlays/dev` → ECR images tagged `:dev`
-- **AWS Prod:** `k8s/overlays/prod` → ECR images tagged `:prod`
-
----
-
-# 5) Cleanup
-
-### Local
 ```bash
+# Local
 kubectl delete -k k8s/overlays/local || true
 kind delete cluster --name cobank || true
-```
 
-### AWS
-```bash
-cd terraform
-terraform destroy
+# AWS
+cd terraform && terraform destroy
 ```
 
 ---
 
-## Notes
+## 🔧 Troubleshooting
 
-- The diagram shows Jenkins/GitHub Actions; this repo includes a `Jenkinsfile` example and uses Ansible as the automation entrypoint.
-- If you want GitHub Actions added as the CI/CD runner, we can add workflows that call the same build/push steps and then let ArgoCD sync.
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `ImagePullBackOff` on kind | Image not loaded into kind runtime | `kind load docker-image cobank-backend:dev --name cobank` |
+| Frontend `CrashLoopBackOff` | nginx permission error (read-only FS) | Already fixed in `k8s/base/frontend-deployment.yaml` via emptyDir mounts |
+| Port-forward "connection refused" | Pod not ready | `kubectl -n cobank wait --for=condition=ready pod -l app=frontend --timeout=120s` |
+
+---
+
+## 👤 Author
+
+**Nicholas Awuni** — Senior DevOps / Cloud Engineer  
+AWS Certified Solutions Architect | HashiCorp Terraform Associate
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Nicholas%20Awuni-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/nicholas-awuni-6018041b1/)
+[![GitHub](https://img.shields.io/badge/GitHub-nickcube2-181717?style=flat&logo=github)](https://github.com/nickcube2)
